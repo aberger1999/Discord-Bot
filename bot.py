@@ -2,9 +2,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import random
+from stylegan2_pytorch import StyleGAN2
 
 '''def run_discord_bot():
-    TOKEN = 'c7228bc178101df95490f43f463aaf6a81b85ee0dcd1140e6f0ccd0be959a412'
+    TOKEN = 'TOKEN'
     client = discord.Client()
 
     @client.event
@@ -16,6 +17,7 @@ import random
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
+TOKEN = ""
 
 @tree.command(name = "hi", description = "If you're lonely", guild=discord.Object(id=806382276845633536)) #Add the guild ids in which the slash command will appear. If it should be in all, remove the argument, but note that it will take some time (up to an hour) to register the command if it's for all guilds.
 async def first_command(interaction):
@@ -31,6 +33,16 @@ async def eightball_command(interaction, question: str):
         random_response = f.readlines()
         response = random.choice(random_response)
     await interaction.response.send_message(f"Question: {question}\nMagic 8-Ball says: {response}")
+
+
+@tree.comand(name = "generate", description = "Generate images", guild=discord.Object(id=806382276845633536))
+async def generate_command(interaction, input: str):
+    def generate_image(pic: str):
+        model = StyleGAN2()
+        image = model(pic)
+        return image
+    generated_image = generate_image(input)
+    await interaction.response.send_message(content="Generated image:", file=discord.File(generated_image, 'generated_image.png'))
 
 @client.event
 async def on_ready():
@@ -57,6 +69,6 @@ async def magic_eightball(ctx, *, question):
 
     await ctx.send(response)'''
 
-client.run("MTEyOTk2NDQ4OTg5NTMxNzU2NQ.GkQVyx.5xYDvBWyQxMPcjfd6QVFFGyplwJRHdexwK_5OA")
+client.run(TOKEN)
 
 
