@@ -24,7 +24,7 @@ async def eightball_command(interaction, question: str):
     await interaction.response.send_message(f"Question: {question}\nMagic 8-Ball says: {response}")
 
 ######################################### Image Generator Command ##################################################
-generator = Craiyon()  # initialize Craiyon class
+# generator = Craiyon()  # initialize Craiyon class
 
 @tree.command(name="imagine", description="Generate images based on a prompt", guild=discord.Object(id=806382276845633536))
 async def imagine(interaction, prompt: str):
@@ -35,28 +35,44 @@ async def imagine(interaction, prompt: str):
         if len(prompt) > 100:
             raise ValueError("Prompt is too long. Maximum allowed length is 100 characters.")
 
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, lambda: generator.generate(prompt))
-
-        if not result:
-            raise ValueError("No result received from API")
-
-        images = craiyon_utils.encode_base64(result.images)
+        print(f"Debug - Starting generation for prompt: {prompt}")
+        generator = Craiyon()  # Create new instance for each request
         
-        # Only process the first image
-        image_bytes = base64.b64decode(images[0])
-        image = Image.open(BytesIO(image_bytes))
+        try:
+            result = await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: generator.generate(prompt)
+            )
+            print(f"Debug - API Response received: {result}")
+        except Exception as api_error:
+            print(f"Debug - API Error: {str(api_error)}")
+            raise ValueError("Failed to connect to image generation service. Please try again later.")
 
-        with BytesIO() as image_io:
-            image.save(image_io, format="PNG")
-            image_io.seek(0)
-            await interaction.followup.send(file=discord.File(image_io, filename="result.png"))
+        if not result or not hasattr(result, 'images'):
+            raise ValueError("No images were generated. Please try a different prompt.")
+
+        try:
+            images = craiyon_utils.encode_base64(result.images)
+            print(f"Debug - Number of images received: {len(images)}")
+            
+            # Only process the first image
+            image_bytes = base64.b64decode(images[0])
+            image = Image.open(BytesIO(image_bytes))
+
+            with BytesIO() as image_io:
+                image.save(image_io, format="PNG")
+                image_io.seek(0)
+                await interaction.followup.send(file=discord.File(image_io, filename="result.png"))
+
+        except Exception as img_error:
+            print(f"Debug - Image Processing Error: {str(img_error)}")
+            raise ValueError("Error processing the generated image. Please try again.")
 
     except ValueError as ve:
-        await interaction.followup.send(content=f"❌ Validation Error: {str(ve)}")
+        await interaction.followup.send(content=f"❌ {str(ve)}")
     except Exception as e:
-        print(f"Error details: {str(e)}")
-        await interaction.followup.send(content=f"❌ An error occurred while generating the image. Please try again.")
+        print(f"Debug - Unexpected Error: {type(e).__name__}: {str(e)}")
+        await interaction.followup.send(content="❌ An unexpected error occurred. Please try again later.")
 ##################################### Poll Command ##############################################
 
 @tree.command(name="poll", description="Create a poll with 2-5 options", guild=discord.Object(id=806382276845633536))
