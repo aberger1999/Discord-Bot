@@ -1,20 +1,11 @@
-import discord
-from discord import app_commands
+import discord, random, base64, asyncio, re, aiohttp, giphy_client
+from discord import app_commands, InteractionResponse, Embed
 from discord.ext import commands
-from discord import InteractionResponse
-import random
 from craiyon import Craiyon, craiyon_utils
 from io import BytesIO
 from PIL import Image
-import base64
-from discord import SelectOption, SelectMenu
-import asyncio
-from datetime import datetime, timedelta
-import re
-import aiohttp
-import giphy_client
+from datetime import datetime
 from giphy_client.rest import ApiException
-from discord import Embed
 from googleapiclient.discovery import build
 from config import TOKEN, GIPHY_API_KEY, GOOGLE_API_KEY, GOOGLE_CSE_ID
 
