@@ -1,6 +1,6 @@
 import discord, random, base64, asyncio, re, aiohttp, giphy_client
-from discord import app_commands, InteractionResponse, Embed
-from discord.ext import commands
+from discord import app_commands, Embed
+from typing import Optional
 from craiyon import Craiyon, craiyon_utils
 from io import BytesIO
 from PIL import Image
@@ -77,7 +77,7 @@ async def imagine(interaction, prompt: str):
 
 @tree.command(name="poll", description="Create a poll with 2-5 options", guild=discord.Object(id=806382276845633536))
 async def poll(interaction, question: str, option1: str, option2: str, 
-               option3: str = None, option4: str = None, option5: str = None):
+               option3: Optional[str] = None, option4: Optional[str] = None, option5: Optional[str] = None):
     # List of emojis for reactions
     emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
     
