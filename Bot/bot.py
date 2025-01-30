@@ -24,7 +24,7 @@ async def eightball_command(interaction, question: str):
     await interaction.response.send_message(f"Question: {question}\nMagic 8-Ball says: {response}")
 
 ######################################### Image Generator Command ##################################################
-# generator = Craiyon()  # initialize Craiyon class
+generator = Craiyon()  # initialize Craiyon class
 
 @tree.command(name="imagine", description="Generate images based on a prompt", guild=discord.Object(id=806382276845633536))
 async def imagine(interaction, prompt: str):
