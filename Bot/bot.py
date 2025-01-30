@@ -1,5 +1,5 @@
-import discord, random, base64, asyncio, re, aiohttp, giphy_client
-from discord import app_commands, Embed
+import discord, random, base64, asyncio, re, aiohttp, giphy_client, replicate, os
+from discord import app_commands, Embed, File
 from typing import Optional
 from craiyon import Craiyon, craiyon_utils
 from io import BytesIO
@@ -7,7 +7,8 @@ from PIL import Image
 from datetime import datetime
 from giphy_client.rest import ApiException
 from googleapiclient.discovery import build
-from config import TOKEN, GIPHY_API_KEY, GOOGLE_API_KEY, GOOGLE_CSE_ID
+from config import TOKEN, GIPHY_API_KEY, GOOGLE_API_KEY, GOOGLE_CSE_ID, REPLICATE_API_KEY
+# REPLICATE_API_KEY = os.getenv("REPLICATE_API_TOKEN")
 
 
 intents = discord.Intents.default()
@@ -24,55 +25,46 @@ async def eightball_command(interaction, question: str):
     await interaction.response.send_message(f"Question: {question}\nMagic 8-Ball says: {response}")
 
 ######################################### Image Generator Command ##################################################
-generator = Craiyon()  # initialize Craiyon class
-
-@tree.command(name="imagine", description="Generate images based on a prompt", guild=discord.Object(id=806382276845633536))
+@tree.command(name="imagine", description="Generate an image", guild=discord.Object(id=806382276845633536))
 async def imagine(interaction, prompt: str):
     await interaction.response.defer()
     try:
-        await interaction.followup.send(f"🎨 Generating image for: {prompt}...")
+        await interaction.followup.send(f"🎨 Generating image for: {prompt}")
         
-        if len(prompt) > 100:
-            raise ValueError("Prompt is too long. Maximum allowed length is 100 characters.")
+        # Set up the API token
+        os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_KEY
 
-        print(f"Debug - Starting generation for prompt: {prompt}")
-        generator = Craiyon()  # Create new instance for each request
-        
-        try:
-            result = await asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: generator.generate(prompt)
-            )
-            print(f"Debug - API Response received: {result}")
-        except Exception as api_error:
-            print(f"Debug - API Error: {str(api_error)}")
-            raise ValueError("Failed to connect to image generation service. Please try again later.")
+        # Run the model
+        output = replicate.run(
+            "stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf",
+            input={
+                "prompt": prompt,
+                "image_dimensions": "512x512",
+                "num_outputs": 1
+            }
+        )
 
-        if not result or not hasattr(result, 'images'):
-            raise ValueError("No images were generated. Please try a different prompt.")
-
-        try:
-            images = craiyon_utils.encode_base64(result.images)
-            print(f"Debug - Number of images received: {len(images)}")
+        # Get the image URL
+        output_list = list(output)
+        if output_list and len(output_list) > 0:
+            image_url = output_list[0]
             
-            # Only process the first image
-            image_bytes = base64.b64decode(images[0])
-            image = Image.open(BytesIO(image_bytes))
+            # Get the image data
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url) as resp:
+                    if resp.status == 200:
+                        data = await resp.read()
+                        # Convert to Discord file
+                        file = discord.File(BytesIO(data), filename="generated.png")
+                        await interaction.followup.send(file=file)
+                    else:
+                        await interaction.followup.send("❌ Failed to download the generated image.")
+        else:
+            await interaction.followup.send("❌ No image was generated.")
 
-            with BytesIO() as image_io:
-                image.save(image_io, format="PNG")
-                image_io.seek(0)
-                await interaction.followup.send(file=discord.File(image_io, filename="result.png"))
-
-        except Exception as img_error:
-            print(f"Debug - Image Processing Error: {str(img_error)}")
-            raise ValueError("Error processing the generated image. Please try again.")
-
-    except ValueError as ve:
-        await interaction.followup.send(content=f"❌ {str(ve)}")
     except Exception as e:
-        print(f"Debug - Unexpected Error: {type(e).__name__}: {str(e)}")
-        await interaction.followup.send(content="❌ An unexpected error occurred. Please try again later.")
+        print(f"Error details: {str(e)}")
+        await interaction.followup.send(f"❌ An error occurred: {str(e)}")
 ##################################### Poll Command ##############################################
 
 @tree.command(name="poll", description="Create a poll with 2-5 options", guild=discord.Object(id=806382276845633536))
