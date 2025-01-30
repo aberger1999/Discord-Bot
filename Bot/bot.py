@@ -7,7 +7,7 @@ from PIL import Image
 from datetime import datetime
 from giphy_client.rest import ApiException
 from googleapiclient.discovery import build
-from Bot.config import TOKEN, GIPHY_API_KEY, GOOGLE_API_KEY, GOOGLE_CSE_ID
+from config import TOKEN, GIPHY_API_KEY, GOOGLE_API_KEY, GOOGLE_CSE_ID
 
 
 intents = discord.Intents.default()

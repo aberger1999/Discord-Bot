@@ -1,0 +1,6 @@
+discord.py
+aiohttp
+giphy-client
+craiyon.py
+Pillow
+google-api-python-client
