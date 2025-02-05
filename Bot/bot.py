@@ -1,23 +1,28 @@
-import discord, random, base64, asyncio, re, aiohttp, giphy_client, replicate, os
-from discord import app_commands, Embed, File
+# Discord Bot with various commands
+# Author: Alex Berger
+# Date: 2023-10-01
+# Description: This bot includes commands for generating images, searching for memes and GIFs, creating polls, setting reminders, and performing Google searches.
+# Dependencies: discord.py, aiohttp, giphy_client, google-api-python-client, replicate, craiyon, PIL
+# License: MIT
+# Copyright (c) 2023 Alex Berger
+##################################### Imports #####################################################
+import discord, random, asyncio, re, aiohttp, giphy_client, replicate, os
+from discord import app_commands, Embed
 from typing import Optional
-from craiyon import Craiyon, craiyon_utils
 from io import BytesIO
-from PIL import Image
 from datetime import datetime
 from giphy_client.rest import ApiException
 from googleapiclient.discovery import build
-from config import TOKEN, GIPHY_API_KEY, GOOGLE_API_KEY, GOOGLE_CSE_ID, REPLICATE_API_KEY
-# REPLICATE_API_KEY = os.getenv("REPLICATE_API_TOKEN")
-
-
+from config import TOKEN, GIPHY_API_KEY, GOOGLE_API_KEY, GOOGLE_CSE_ID, REPLICATE_API_KEY, GUILD_ID
+######################################### Initialize clients ################################################
+replicate_client = replicate.Client(api_token=REPLICATE_API_KEY)
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
 ####################################### Magic 8Ball Command ###################################
-@tree.command(name = "eightball", description = "Magic eightball", guild=discord.Object(id=806382276845633536))
+@tree.command(name = "eightball", description = "Magic eightball", guild=discord.Object(id=GUILD_ID))
 async def eightball_command(interaction, question: str):
     with open("discordbot/response.txt", "r") as f:
         random_response = f.readlines()
@@ -25,17 +30,14 @@ async def eightball_command(interaction, question: str):
     await interaction.response.send_message(f"Question: {question}\nMagic 8-Ball says: {response}")
 
 ######################################### Image Generator Command ##################################################
-@tree.command(name="imagine", description="Generate an image", guild=discord.Object(id=806382276845633536))
+@tree.command(name="imagine", description="Generate an image", guild=discord.Object(id=GUILD_ID))
 async def imagine(interaction, prompt: str):
     await interaction.response.defer()
     try:
         await interaction.followup.send(f"🎨 Generating image for: {prompt}")
         
-        # Set up the API token
-        os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_KEY
-
-        # Run the model
-        output = replicate.run(
+        # Run the model using the global client
+        output = replicate_client.run(
             "stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf",
             input={
                 "prompt": prompt,
@@ -67,7 +69,7 @@ async def imagine(interaction, prompt: str):
         await interaction.followup.send(f"❌ An error occurred: {str(e)}")
 ##################################### Poll Command ##############################################
 
-@tree.command(name="poll", description="Create a poll with 2-5 options", guild=discord.Object(id=806382276845633536))
+@tree.command(name="poll", description="Create a poll with 2-5 options", guild=discord.Object(id=GUILD_ID))
 async def poll(interaction, question: str, option1: str, option2: str, 
                option3: Optional[str] = None, option4: Optional[str] = None, option5: Optional[str] = None):
     # List of emojis for reactions
@@ -107,7 +109,7 @@ def parse_time(time_str):
     
     return total_seconds
 
-@tree.command(name="remind", description="Set a reminder (format: 1h30m, 45m, 2h)", guild=discord.Object(id=806382276845633536))
+@tree.command(name="remind", description="Set a reminder (format: 1h30m, 45m, 2h)", guild=discord.Object(id=GUILD_ID))
 async def remind(interaction, time: str, reminder: str):
     try:
         seconds = parse_time(time)
@@ -145,7 +147,7 @@ async def remind(interaction, time: str, reminder: str):
 
 
 ####################################### Meme/GIF Command ########################################################
-@tree.command(name="gif", description="Search for a GIF", guild=discord.Object(id=806382276845633536))
+@tree.command(name="gif", description="Search for a GIF", guild=discord.Object(id=GUILD_ID))
 async def gif(interaction, search_term: str):
     await interaction.response.defer()
     
@@ -179,7 +181,7 @@ async def gif(interaction, search_term: str):
         await interaction.followup.send(f"Error: {str(e)}")
 
 
-@tree.command(name="meme", description="Get a random meme", guild=discord.Object(id=806382276845633536))
+@tree.command(name="meme", description="Get a random meme", guild=discord.Object(id=GUILD_ID))
 async def meme(interaction):
     await interaction.response.defer()
     
@@ -214,7 +216,7 @@ async def meme(interaction):
 
 ######################################## Google Search Command ###################################################
 # Google Search Command
-@tree.command(name="search", description="Quick Google search", guild=discord.Object(id=806382276845633536))
+@tree.command(name="search", description="Quick Google search", guild=discord.Object(id=GUILD_ID))
 async def search(interaction, query: str):
     await interaction.response.defer()
     
