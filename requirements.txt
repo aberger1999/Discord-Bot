@@ -4,3 +4,8 @@ giphy-client
 craiyon.py
 Pillow
 google-api-python-client
+yt-dlp
+PyNaCl
+deep-translator
+python-dateutil
+replicate
