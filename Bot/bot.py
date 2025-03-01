@@ -10,10 +10,13 @@ import discord, random, asyncio, re, aiohttp, giphy_client, replicate, os
 from discord import app_commands, Embed
 from typing import Optional
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
 from giphy_client.rest import ApiException
 from googleapiclient.discovery import build
-from config import TOKEN, GIPHY_API_KEY, GOOGLE_API_KEY, GOOGLE_CSE_ID, REPLICATE_API_KEY, GUILD_ID
+from config import TOKEN, GIPHY_API_KEY, GOOGLE_API_KEY, GOOGLE_CSE_ID, REPLICATE_API_KEY, GUILD_ID, OPENWEATHER_API_KEY
+import requests
+from dateutil import parser
+from deep_translator import GoogleTranslator
 ######################################### Initialize clients ################################################
 replicate_client = replicate.Client(api_token=REPLICATE_API_KEY)
 intents = discord.Intents.default()
@@ -41,15 +44,28 @@ async def imagine(interaction, prompt: str):
             "stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf",
             input={
                 "prompt": prompt,
-                "image_dimensions": "512x512",
+                "width": 512,
+                "height": 512,
                 "num_outputs": 1
             }
         )
 
-        # Get the image URL
-        output_list = list(output)
-        if output_list and len(output_list) > 0:
-            image_url = output_list[0]
+        # Handle the output more carefully
+        try:
+            # If output is already a string (URL)
+            if isinstance(output, str):
+                image_url = output
+            # If output is a list or generator
+            elif hasattr(output, '__iter__'):
+                output_list = list(output)
+                if output_list and len(output_list) > 0:
+                    image_url = str(output_list[0])
+                else:
+                    await interaction.followup.send("❌ No image was generated.")
+                    return
+            # If output is something else
+            else:
+                image_url = str(output)
             
             # Get the image data
             async with aiohttp.ClientSession() as session:
@@ -60,9 +76,10 @@ async def imagine(interaction, prompt: str):
                         file = discord.File(BytesIO(data), filename="generated.png")
                         await interaction.followup.send(file=file)
                     else:
-                        await interaction.followup.send("❌ Failed to download the generated image.")
-        else:
-            await interaction.followup.send("❌ No image was generated.")
+                        await interaction.followup.send(f"❌ Failed to download the generated image. Status code: {resp.status}")
+        except Exception as e:
+            print(f"Error processing Replicate output: {str(e)}")
+            await interaction.followup.send(f"❌ Error processing the generated image: {str(e)}")
 
     except Exception as e:
         print(f"Error details: {str(e)}")
@@ -248,8 +265,327 @@ async def search(interaction, query: str):
 ############################################# Music Command ########################################################
 
 
-####################################################### Bot Run ########################################################            
+############################################# Weather Command ########################################################
+@tree.command(name="weather", description="Get current weather for a location", guild=discord.Object(id=GUILD_ID))
+async def weather(interaction, location: str):
+    await interaction.response.defer()
+    
+    try:
+        # Using OpenWeatherMap API
+        api_key_weather = OPENWEATHER_API_KEY
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={location}&appid={api_key_weather}&units=imperial"
+        
+        print(f"Weather API URL: {url}")  # Debug print to see the URL being used
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    error_data = await response.json()
+                    error_message = error_data.get('message', 'Unknown error')
+                    print(f"Weather API error: {error_message} (Status: {response.status})")
+                    await interaction.followup.send(f"❌ Couldn't find weather data for '{location}'. Error: {error_message}")
+                    return
+                
+                data = await response.json()
+                
+                # Extract weather information
+                try:
+                    city = data["name"]
+                    country = data["sys"]["country"]
+                    temp = data["main"]["temp"]
+                    temp_celsius = (temp - 32) * 5/9
+                    feels_like = data["main"]["feels_like"]
+                    humidity = data["main"]["humidity"]
+                    wind_speed = data["wind"]["speed"]
+                    description = data["weather"][0]["description"]
+                    icon_code = data["weather"][0]["icon"]
+                    icon_url = f"http://openweathermap.org/img/wn/{icon_code}@2x.png"
+                    
+                    # Create embed
+                    embed = Embed(
+                        title=f"Weather in {city}, {country}",
+                        description=f"**{description.capitalize()}**",
+                        color=0x3498db
+                    )
+                    embed.set_thumbnail(url=icon_url)
+                    embed.add_field(name="Temperature", value=f"{temp:.1f}°F / {temp_celsius:.1f}°C", inline=True)
+                    embed.add_field(name="Feels Like", value=f"{feels_like:.1f}°F", inline=True)
+                    embed.add_field(name="Humidity", value=f"{humidity}%", inline=True)
+                    embed.add_field(name="Wind Speed", value=f"{wind_speed} mph", inline=True)
+                    embed.set_footer(text="Data from OpenWeatherMap")
+                    
+                    await interaction.followup.send(embed=embed)
+                except KeyError as ke:
+                    print(f"Weather data parsing error: {ke} in {data}")
+                    await interaction.followup.send(f"❌ Error processing weather data for '{location}'. The API response format may have changed.")
+                
+    except Exception as e:
+        print(f"Weather error: {str(e)}")
+        await interaction.followup.send(f"❌ Error fetching weather: {str(e)}")
 
+############################################# Joke Command ########################################################
+@tree.command(name="joke", description="Get a random joke", guild=discord.Object(id=GUILD_ID))
+async def joke(interaction):
+    await interaction.response.defer()
+    
+    try:
+        # Choose a random joke API
+        apis = [
+            "https://official-joke-api.appspot.com/random_joke",
+            "https://v2.jokeapi.dev/joke/Any?safe-mode",
+            "https://icanhazdadjoke.com/"
+        ]
+        
+        api_url = random.choice(apis)
+        headers = {"Accept": "application/json"}
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url, headers=headers) as response:
+                if response.status != 200:
+                    await interaction.followup.send("❌ Couldn't fetch a joke at the moment.")
+                    return
+                
+                data = await response.json()
+                
+                # Format joke based on API
+                if api_url == "https://official-joke-api.appspot.com/random_joke":
+                    joke_text = f"**{data['setup']}**\n\n{data['punchline']}"
+                elif api_url == "https://v2.jokeapi.dev/joke/Any?safe-mode":
+                    if data["type"] == "single":
+                        joke_text = data["joke"]
+                    else:
+                        joke_text = f"**{data['setup']}**\n\n{data['delivery']}"
+                else:  # icanhazdadjoke
+                    joke_text = data["joke"]
+                
+                embed = Embed(
+                    title="Here's a joke for you!",
+                    description=joke_text,
+                    color=0xf1c40f
+                )
+                embed.set_footer(text="😂")
+                
+                await interaction.followup.send(embed=embed)
+                
+    except Exception as e:
+        print(f"Joke error: {str(e)}")
+        await interaction.followup.send(f"❌ Error fetching joke: {str(e)}")
+
+############################################# Translator Command ########################################################
+@tree.command(name="translate", description="Translate text to another language", guild=discord.Object(id=GUILD_ID))
+async def translate(interaction, text: str, target_language: str):
+    await interaction.response.defer()
+    
+    try:
+        # List of supported language codes
+        supported_languages = {
+            "english": "en", "spanish": "es", "french": "fr", "german": "de", 
+            "italian": "it", "portuguese": "pt", "russian": "ru", "japanese": "ja", 
+            "chinese": "zh-CN", "korean": "ko", "arabic": "ar", "hindi": "hi"
+        }
+        
+        # Convert language name to code if needed
+        target_code = target_language.lower()
+        if target_code in supported_languages:
+            target_code = supported_languages[target_code]
+        
+        # Perform translation
+        translator = GoogleTranslator(source='auto', target=target_code)
+        translated_text = translator.translate(text)
+        
+        if not translated_text:
+            await interaction.followup.send(f"❌ Couldn't translate to '{target_language}'. Try using a language code like 'en', 'es', 'fr', etc.")
+            return
+        
+        embed = Embed(
+            title=f"Translation to {target_language}",
+            color=0x2ecc71
+        )
+        embed.add_field(name="Original Text", value=text, inline=False)
+        embed.add_field(name="Translated Text", value=translated_text, inline=False)
+        
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        print(f"Translation error: {str(e)}")
+        await interaction.followup.send(f"❌ Error during translation: {str(e)}")
+
+############################################# Currency Converter Command ########################################################
+@tree.command(name="currency", description="Convert between currencies", guild=discord.Object(id=GUILD_ID))
+async def currency(interaction, amount: float, from_currency: str, to_currency: str):
+    await interaction.response.defer()
+    
+    try:
+        # Using ExchangeRate-API (free tier)
+        api_key_currency = CURRENCY_API_KEY # Free API key with limited usage
+        url = f"https://v6.exchangerate-api.com/v6/{api_key_currency}/latest/{from_currency.upper()}"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    await interaction.followup.send(f"❌ Couldn't find exchange rate for '{from_currency}' to '{to_currency}'")
+                    return
+                
+                data = await response.json()
+                
+                if data["result"] != "success":
+                    await interaction.followup.send(f"❌ API Error: {data.get('error-type', 'Unknown error')}")
+                    return
+                
+                # Get exchange rate
+                to_currency = to_currency.upper()
+                if to_currency not in data["conversion_rates"]:
+                    await interaction.followup.send(f"❌ Currency '{to_currency}' not found. Please use standard currency codes like USD, EUR, GBP, etc.")
+                    return
+                
+                rate = data["conversion_rates"][to_currency]
+                converted_amount = amount * rate
+                
+                embed = Embed(
+                    title="Currency Conversion",
+                    description=f"**{amount:,.2f} {from_currency.upper()} = {converted_amount:,.2f} {to_currency}**",
+                    color=0x9b59b6
+                )
+                embed.add_field(name="Exchange Rate", value=f"1 {from_currency.upper()} = {rate} {to_currency}", inline=False)
+                embed.set_footer(text="Powered by ExchangeRate-API")
+                
+                await interaction.followup.send(embed=embed)
+                
+    except Exception as e:
+        print(f"Currency conversion error: {str(e)}")
+        await interaction.followup.send(f"❌ Error during currency conversion: {str(e)}")
+
+############################################# Countdown Timer Command ########################################################
+@tree.command(name="countdown", description="Create a countdown to an event", guild=discord.Object(id=GUILD_ID))
+async def countdown(interaction, event_name: str, date: str):
+    await interaction.response.defer()
+    
+    try:
+        # Parse the date
+        try:
+            target_date = parser.parse(date)
+        except:
+            await interaction.followup.send("❌ Invalid date format. Please use a format like 'YYYY-MM-DD' or 'MM/DD/YYYY'.")
+            return
+        
+        # Calculate time difference
+        now = datetime.now()
+        if target_date < now:
+            await interaction.followup.send("❌ The specified date is in the past.")
+            return
+        
+        # Calculate time remaining
+        time_diff = target_date - now
+        days = time_diff.days
+        hours, remainder = divmod(time_diff.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        # Format the countdown message
+        embed = Embed(
+            title=f"⏰ Countdown to {event_name}",
+            description=f"**Target Date:** {target_date.strftime('%A, %B %d, %Y')}",
+            color=0xe74c3c
+        )
+        
+        time_remaining = f"{days} days, {hours} hours, {minutes} minutes"
+        embed.add_field(name="Time Remaining", value=time_remaining, inline=False)
+        
+        # Add exact date and time
+        embed.set_footer(text=f"Event occurs at: {target_date.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        print(f"Countdown error: {str(e)}")
+        await interaction.followup.send(f"❌ Error creating countdown: {str(e)}")
+
+############################################# Word of the Day Command ########################################################
+@tree.command(name="wordofday", description="Get the word of the day", guild=discord.Object(id=GUILD_ID))
+async def wordofday(interaction):
+    await interaction.response.defer()
+    
+    try:
+        # Try multiple APIs with fallback options
+        apis = [
+            "https://random-words-api.vercel.app/word",
+            "https://api.dictionaryapi.dev/api/v2/entries/en/",
+            "https://www.wordnik.com/words/"
+        ]
+        
+        # First attempt: Random Words API
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(apis[0]) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        word = data[0]["word"]
+                        definition = data[0]["definition"]
+                        pronunciation = data[0].get("pronunciation", "")
+                        
+                        embed = Embed(
+                            title=f"📚 Word of the Day: {word}",
+                            color=0x1abc9c
+                        )
+                        
+                        if pronunciation:
+                            embed.add_field(name="Pronunciation", value=pronunciation, inline=False)
+                            
+                        embed.add_field(name="Definition", value=definition, inline=False)
+                        embed.set_footer(text="Expand your vocabulary every day!")
+                        
+                        await interaction.followup.send(embed=embed)
+                        return
+            except Exception as e:
+                print(f"First API failed: {str(e)}")
+        
+        # Fallback: Use a list of interesting words with definitions
+        fallback_words = [
+            {"word": "Serendipity", "definition": "The occurrence and development of events by chance in a happy or beneficial way.", "pos": "noun"},
+            {"word": "Ephemeral", "definition": "Lasting for a very short time.", "pos": "adjective"},
+            {"word": "Mellifluous", "definition": "Sweet or musical; pleasant to hear.", "pos": "adjective"},
+            {"word": "Quintessential", "definition": "Representing the most perfect or typical example of a quality or class.", "pos": "adjective"},
+            {"word": "Eloquent", "definition": "Fluent or persuasive in speaking or writing.", "pos": "adjective"},
+            {"word": "Luminous", "definition": "Full of or shedding light; bright or shining.", "pos": "adjective"},
+            {"word": "Resilience", "definition": "The capacity to recover quickly from difficulties; toughness.", "pos": "noun"},
+            {"word": "Surreptitious", "definition": "Kept secret, especially because it would not be approved of.", "pos": "adjective"},
+            {"word": "Pernicious", "definition": "Having a harmful effect, especially in a gradual or subtle way.", "pos": "adjective"},
+            {"word": "Ubiquitous", "definition": "Present, appearing, or found everywhere.", "pos": "adjective"},
+            {"word": "Cacophony", "definition": "A harsh, discordant mixture of sounds.", "pos": "noun"},
+            {"word": "Euphoria", "definition": "A feeling or state of intense excitement and happiness.", "pos": "noun"},
+            {"word": "Paradigm", "definition": "A typical example or pattern of something; a model.", "pos": "noun"},
+            {"word": "Benevolent", "definition": "Well meaning and kindly.", "pos": "adjective"},
+            {"word": "Enigma", "definition": "A person or thing that is mysterious, puzzling, or difficult to understand.", "pos": "noun"}
+        ]
+        
+        # Select a random word from the fallback list
+        word_data = random.choice(fallback_words)
+        
+        embed = Embed(
+            title=f"📚 Word of the Day: {word_data['word']}",
+            color=0x1abc9c
+        )
+        
+        embed.add_field(name="Part of Speech", value=word_data["pos"], inline=True)
+        embed.add_field(name="Definition", value=word_data["definition"], inline=False)
+        
+        # Add a fun fact about using the word
+        tips = [
+            "Try using this word in a conversation today!",
+            "Words like this can enhance your writing.",
+            "Expand your vocabulary every day!",
+            "The best way to remember a word is to use it.",
+            "Learning new words improves cognitive function."
+        ]
+        
+        embed.set_footer(text=random.choice(tips))
+        
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        print(f"Word of the day error: {str(e)}")
+        await interaction.followup.send(f"❌ Error fetching word of the day: {str(e)}")
+
+####################################################### Bot Run ########################################################            
 @client.event
 async def on_ready():
     await tree.sync(guild=discord.Object(id=806382276845633536))
