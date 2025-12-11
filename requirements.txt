@@ -9,3 +9,4 @@ PyNaCl
 deep-translator
 python-dateutil
 replicate
+qrcode[pil]
