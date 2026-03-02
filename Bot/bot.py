@@ -1253,7 +1253,7 @@ async def on_voice_state_update(member, before, after):
 @client.event
 async def on_ready():
     await tree.sync(guild=discord.Object(id=GUILD_ID))
-    print(f"✅ Bot is ready! Logged in as {client.user}")
-    print(f"📊 Connected to {len(client.guilds)} guild(s)")
+    print(f"Bot is ready! Logged in as {client.user}")
+    print(f"Connected to {len(client.guilds)} guild(s)")
 
 client.run(TOKEN)
