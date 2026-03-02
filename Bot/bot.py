@@ -6,7 +6,7 @@
 # License: MIT
 # Copyright (c) 2023 Alex Berger
 ##################################### Imports #####################################################
-import discord, random, asyncio, re, aiohttp, giphy_client, replicate, os
+import discord, random, asyncio, re, aiohttp, giphy_client, replicate, os, math, struct, wave
 from discord import app_commands, Embed
 from typing import Optional
 from io import BytesIO
@@ -21,13 +21,18 @@ from deep_translator import GoogleTranslator
 replicate_client = replicate.Client(api_token=REPLICATE_API_KEY)
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
+intents.voice_states = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
+
+# Tracks users locked in a persistent server mute (user_id -> guild_id)
+permamuted_users = {}
 
 ####################################### Magic 8Ball Command ###################################
 @tree.command(name = "eightball", description = "Magic eightball", guild=discord.Object(id=GUILD_ID))
 async def eightball_command(interaction, question: str):
-    with open("discordbot/response.txt", "r") as f:
+    with open(os.path.join(os.path.dirname(__file__), "response.txt"), "r") as f:
         random_response = f.readlines()
         response = random.choice(random_response)
     await interaction.response.send_message(f"Question: {question}\nMagic 8-Ball says: {response}")
@@ -35,55 +40,48 @@ async def eightball_command(interaction, question: str):
 ######################################### Image Generator Command ##################################################
 @tree.command(name="imagine", description="Generate an image", guild=discord.Object(id=GUILD_ID))
 async def imagine(interaction, prompt: str):
+    """Generate an image from a text prompt using Stable Diffusion 3 via Replicate."""
     await interaction.response.defer()
     try:
-        await interaction.followup.send(f"🎨 Generating image for: {prompt}")
-        
-        # Run the model using the global client
+        await interaction.followup.send(f"🎨 Generating image for: **{prompt}**")
+
+        # Run Stable Diffusion 3 via Replicate (returns FileOutput objects)
         output = replicate_client.run(
-            "stability-ai/stable-diffusion:db21e45d3f7023abc2a46ee38a23973f6dce16bb082a930b0c49861f96d1e5bf",
+            "stability-ai/stable-diffusion-3",
             input={
                 "prompt": prompt,
-                "width": 512,
-                "height": 512,
-                "num_outputs": 1
+                "output_format": "png",
+                "aspect_ratio": "1:1"
             }
         )
 
-        # Handle the output more carefully
-        try:
-            # If output is already a string (URL)
-            if isinstance(output, str):
-                image_url = output
-            # If output is a list or generator
-            elif hasattr(output, '__iter__'):
-                output_list = list(output)
-                if output_list and len(output_list) > 0:
-                    image_url = str(output_list[0])
+        # Extract the image URL from the FileOutput object
+        if isinstance(output, list) and len(output) > 0:
+            image_url = output[0].url if hasattr(output[0], 'url') else str(output[0])
+        elif hasattr(output, 'url'):
+            image_url = output.url
+        else:
+            image_url = str(output)
+
+        if not image_url:
+            await interaction.followup.send("❌ No image was generated.")
+            return
+
+        # Download and send the image as a Discord file attachment
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url) as resp:
+                if resp.status == 200:
+                    data = await resp.read()
+                    file = discord.File(BytesIO(data), filename="generated.png")
+                    await interaction.followup.send(file=file)
                 else:
-                    await interaction.followup.send("❌ No image was generated.")
-                    return
-            # If output is something else
-            else:
-                image_url = str(output)
-            
-            # Get the image data
-            async with aiohttp.ClientSession() as session:
-                async with session.get(image_url) as resp:
-                    if resp.status == 200:
-                        data = await resp.read()
-                        # Convert to Discord file
-                        file = discord.File(BytesIO(data), filename="generated.png")
-                        await interaction.followup.send(file=file)
-                    else:
-                        await interaction.followup.send(f"❌ Failed to download the generated image. Status code: {resp.status}")
-        except Exception as e:
-            print(f"Error processing Replicate output: {str(e)}")
-            await interaction.followup.send(f"❌ Error processing the generated image: {str(e)}")
+                    await interaction.followup.send(
+                        f"❌ Failed to download the generated image. (HTTP {resp.status})"
+                    )
 
     except Exception as e:
-        print(f"Error details: {str(e)}")
-        await interaction.response.send_message(f"❌ An error occurred: {str(e)}")
+        print(f"Imagine command error: {str(e)}")
+        await interaction.followup.send(f"❌ An error occurred: {str(e)}")
 ##################################### Poll Command ##############################################
 
 @tree.command(name="poll", description="Create a poll with 2-5 options", guild=discord.Object(id=GUILD_ID))
@@ -200,36 +198,34 @@ async def gif(interaction, search_term: str):
 
 @tree.command(name="meme", description="Get a random meme", guild=discord.Object(id=GUILD_ID))
 async def meme(interaction):
+    """Fetch a random meme from popular subreddits via meme-api.com."""
     await interaction.response.defer()
-    
+
     subreddits = ['memes', 'dankmemes', 'wholesomememes']
     subreddit = random.choice(subreddits)
-    
+
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.get(f'https://www.reddit.com/r/{subreddit}/hot.json?limit=50') as response:
+            async with session.get(f'https://meme-api.com/gimme/{subreddit}') as response:
                 if response.status == 200:
                     data = await response.json()
-                    posts = [post['data'] for post in data['data']['children'] 
-                            if not post['data']['is_self'] and 
-                            post['data']['url'].endswith(('.jpg', '.png', '.gif'))]
-                    
-                    if posts:
-                        random_post = random.choice(posts)
-                        
-                        # Create embed
-                        embed = Embed(title=random_post['title'])
-                        embed.set_image(url=random_post['url'])
-                        embed.set_footer(text=f"From r/{subreddit}")
-                        
-                        await interaction.followup.send(embed=embed)
-                    else:
-                        await interaction.followup.send("Couldn't find any memes at the moment.")
+
+                    # Skip NSFW/spoiler posts
+                    if data.get('nsfw') or data.get('spoiler'):
+                        await interaction.followup.send("🔄 Got a spoiler/NSFW post — try again!")
+                        return
+
+                    embed = Embed(title=data.get('title', 'Random Meme'))
+                    embed.set_image(url=data['url'])
+                    embed.set_footer(text=f"From r/{data.get('subreddit', subreddit)} • 👍 {data.get('ups', 0)}")
+
+                    await interaction.followup.send(embed=embed)
                 else:
-                    await interaction.followup.send("Error fetching meme.")
-                    
+                    await interaction.followup.send("❌ Couldn't fetch a meme right now. Try again later!")
+
         except Exception as e:
-            await interaction.followup.send(f"Error: {str(e)}")
+            print(f"Meme command error: {str(e)}")
+            await interaction.followup.send(f"❌ Error fetching meme: {str(e)}")
 
 ######################################## Google Search Command ###################################################
 # Google Search Command
@@ -537,10 +533,233 @@ async def wordofday(interaction):
         print(f"Word of the day error: {str(e)}")
         await interaction.followup.send(f"❌ Error fetching word of the day: {str(e)}")
 
-####################################################### Bot Run ########################################################            
+############################################# Reverse Command ########################################################
+@tree.command(name="reverse", description="Reverse someone's text because why not", guild=discord.Object(id=GUILD_ID))
+async def reverse(interaction, text: str):
+    """Reverses the given text and sends it back — surprisingly annoying."""
+    reversed_text = text[::-1]
+
+    # Zero-width characters sprinkled in so it can't be easily copy-pasted back
+    trolled = "\u200b".join(reversed_text)
+
+    embed = Embed(
+        title="🔄 REVERSED",
+        description=trolled,
+        color=0xff6961
+    )
+    embed.set_footer(text=f"Original: {text}")
+    await interaction.response.send_message(embed=embed)
+
+############################################# Mock Command ##########################################################
+@tree.command(name="mock", description="mOcK sOmEoNe'S tExT", guild=discord.Object(id=GUILD_ID))
+async def mock(interaction, text: str):
+    """Converts text to SpOnGeBoB mOcKiNg CaSe for maximum disrespect."""
+    mocked = "".join(
+        char.upper() if i % 2 else char.lower()
+        for i, char in enumerate(text)
+    )
+
+    embed = Embed(
+        description=mocked,
+        color=0xf4d03f
+    )
+    embed.set_thumbnail(url="https://i.imgflip.com/1otk96.jpg")
+    embed.set_footer(text=f"— {interaction.user.display_name} is mocking someone")
+    await interaction.response.send_message(embed=embed)
+
+############################################# Permamute Commands #####################################################
+@tree.command(name="permamute", description="Permanently server-mute a user until /unpermamute is used", guild=discord.Object(id=GUILD_ID))
+@app_commands.default_permissions(mute_members=True)
+async def permamute(interaction, target: discord.Member):
+    """Locks a user into a server mute. If they unmute, the bot instantly re-mutes them."""
+    if target.bot:
+        await interaction.response.send_message("❌ Can't permamute a bot.", ephemeral=True)
+        return
+
+    if target.id == interaction.user.id:
+        await interaction.response.send_message("❌ You can't permamute yourself... or can you? No.", ephemeral=True)
+        return
+
+    permamuted_users[target.id] = interaction.guild_id
+
+    # Mute them immediately if they're in a voice channel
+    if target.voice and target.voice.channel:
+        try:
+            await target.edit(mute=True, reason=f"Permamuted by {interaction.user}")
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I don't have permission to mute that user.", ephemeral=True)
+            return
+
+    embed = Embed(
+        title="🔇 PERMAMUTED",
+        description=f"{target.mention} has been **permanently server-muted**.\n"
+                    f"They will be re-muted every time they try to unmute.\n\n"
+                    f"Use `/unpermamute` to release them.",
+        color=0xe74c3c
+    )
+    embed.set_footer(text=f"Muted by {interaction.user.display_name}")
+    await interaction.response.send_message(embed=embed)
+
+
+@tree.command(name="unpermamute", description="Release a user from the permamute", guild=discord.Object(id=GUILD_ID))
+@app_commands.default_permissions(mute_members=True)
+async def unpermamute(interaction, target: discord.Member):
+    """Releases a user from the permamute prison."""
+    if target.id not in permamuted_users:
+        await interaction.response.send_message(f"❌ {target.mention} isn't permamuted.", ephemeral=True)
+        return
+
+    del permamuted_users[target.id]
+
+    # Unmute them if they're currently in a voice channel
+    if target.voice and target.voice.channel:
+        try:
+            await target.edit(mute=False, reason=f"Unpermamuted by {interaction.user}")
+        except discord.Forbidden:
+            pass
+
+    embed = Embed(
+        title="🔊 UNPERMAMUTED",
+        description=f"{target.mention} has been **released** from the permamute. They're free... for now.",
+        color=0x2ecc71
+    )
+    await interaction.response.send_message(embed=embed)
+
+############################################# Screech Kick Command ###################################################
+
+def _generate_screech_wav():
+    """Generate a short, ear-piercing screech WAV file at bot startup."""
+    filepath = os.path.join(os.path.dirname(__file__), "screech.wav")
+    if os.path.exists(filepath):
+        return filepath
+
+    sample_rate = 44100
+    duration = 2.5
+    n_samples = int(duration * sample_rate)
+
+    with wave.open(filepath, 'w') as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+
+        for i in range(n_samples):
+            t = i / sample_rate
+            # Layer harsh high-frequency tones with a wobbling siren for maximum pain
+            sample = (
+                math.sin(2 * math.pi * 3000 * t) * 0.3
+                + math.sin(2 * math.pi * 5500 * t) * 0.25
+                + math.sin(2 * math.pi * 8000 * t) * 0.2
+                + math.sin(2 * math.pi * 1200 * t * (1 + 0.5 * math.sin(2 * math.pi * 10 * t))) * 0.25
+            )
+            sample = max(-1.0, min(1.0, sample))
+            wav_file.writeframes(struct.pack('<h', int(sample * 32767)))
+
+    return filepath
+
+# Pre-generate the screech file so it's ready to go
+SCREECH_PATH = _generate_screech_wav()
+
+def _find_ffmpeg():
+    """Locate ffmpeg: check the system PATH first, fall back to common install locations."""
+    import shutil
+    path = shutil.which("ffmpeg")
+    if path:
+        return path
+
+    # Common Windows install locations as a fallback
+    fallback_dirs = [
+        os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Links"),
+        r"C:\ffmpeg\bin",
+        r"C:\ProgramData\chocolatey\bin",
+    ]
+    for directory in fallback_dirs:
+        candidate = os.path.join(directory, "ffmpeg.exe")
+        if os.path.isfile(candidate):
+            return candidate
+
+    return "ffmpeg"  # Last resort — hope it's on PATH at runtime
+
+FFMPEG_PATH = _find_ffmpeg()
+
+
+@tree.command(name="screechkick", description="Join VC, play an awful screech, then kick a random person", guild=discord.Object(id=GUILD_ID))
+@app_commands.default_permissions(move_members=True)
+async def screechkick(interaction):
+    """Joins the caller's voice channel, plays an ear-piercing screech, then
+    disconnects a random member from the channel."""
+    await interaction.response.defer()
+
+    # Make sure the caller is in a voice channel
+    if not interaction.user.voice or not interaction.user.voice.channel:
+        await interaction.followup.send("❌ You need to be in a voice channel to use this!", ephemeral=True)
+        return
+
+    vc_channel = interaction.user.voice.channel
+    members_in_vc = [m for m in vc_channel.members if not m.bot]
+
+    if len(members_in_vc) == 0:
+        await interaction.followup.send("❌ No humans in the voice channel to kick!", ephemeral=True)
+        return
+
+    # Pick the victim before joining
+    victim = random.choice(members_in_vc)
+
+    try:
+        # Connect to the voice channel
+        voice_client = await vc_channel.connect()
+
+        await interaction.followup.send(
+            f"📢 **INCOMING...**\n\n"
+            f"🎯 Someone in **{vc_channel.name}** is about to have a very bad time..."
+        )
+
+        # Play the screech at full volume
+        audio_source = discord.PCMVolumeTransformer(
+            discord.FFmpegPCMAudio(SCREECH_PATH, executable=FFMPEG_PATH),
+            volume=1.0
+        )
+        voice_client.play(audio_source)
+
+        # Wait for the screech to finish playing
+        while voice_client.is_playing():
+            await asyncio.sleep(0.25)
+
+        # Kick the victim from voice by disconnecting them
+        try:
+            await victim.move_to(None, reason="Screech-kicked by the bot")
+            kick_msg = f"💀 **{victim.display_name}** got screech-kicked! Rest in peace."
+        except discord.Forbidden:
+            kick_msg = f"😤 Tried to kick **{victim.display_name}** but I don't have permission!"
+
+        await interaction.followup.send(kick_msg)
+
+        # Disconnect the bot from voice
+        await voice_client.disconnect()
+
+    except Exception as e:
+        print(f"Screechkick error: {str(e)}")
+        await interaction.followup.send(f"❌ Something went wrong: {str(e)}")
+        # Clean up voice connection if it exists
+        if interaction.guild.voice_client:
+            await interaction.guild.voice_client.disconnect()
+
+####################################################### Bot Run ########################################################
+@client.event
+async def on_voice_state_update(member, before, after):
+    """Re-mutes permamuted users whenever they try to unmute themselves."""
+    if member.id not in permamuted_users:
+        return
+
+    # If they just joined or unmuted in a voice channel, slam the mute back on
+    if after.channel is not None and not after.mute:
+        try:
+            await member.edit(mute=True, reason="Permamuted — nice try")
+        except discord.Forbidden:
+            pass
+
 @client.event
 async def on_ready():
-    await tree.sync(guild=discord.Object(id=806382276845633536))
+    await tree.sync(guild=discord.Object(id=GUILD_ID))
     print("Ready!")
 
 client.run(TOKEN)
