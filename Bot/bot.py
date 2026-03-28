@@ -62,7 +62,7 @@ ffmpeg_options = {
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
 ####################################### Magic 8Ball Command ###################################
-@tree.command(name = "eightball", description = "Magic eightball", guild=discord.Object(id=GUILD_ID))
+@tree.command(name = "eightball", description = "Magic eightball")
 async def eightball_command(interaction, question: str):
     with open(os.path.join(os.path.dirname(__file__), "response.txt"), "r") as f:
         random_response = f.readlines()
@@ -70,7 +70,7 @@ async def eightball_command(interaction, question: str):
     await interaction.response.send_message(f"Question: {question}\nMagic 8-Ball says: {response}")
 
 ######################################### Image Generator Command ##################################################
-@tree.command(name="imagine", description="Generate an image", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="imagine", description="Generate an image")
 async def imagine(interaction, prompt: str):
     """Generate an image from a text prompt using Stable Diffusion 3 via Replicate."""
     await interaction.response.defer()
@@ -116,7 +116,7 @@ async def imagine(interaction, prompt: str):
         await interaction.followup.send(f"❌ An error occurred: {str(e)}")
 ##################################### Poll Command ##############################################
 
-@tree.command(name="poll", description="Create a poll with 2-5 options", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="poll", description="Create a poll with 2-5 options")
 async def poll(interaction, question: str, option1: str, option2: str, 
                option3: Optional[str] = None, option4: Optional[str] = None, option5: Optional[str] = None):
     # List of emojis for reactions
@@ -156,7 +156,7 @@ def parse_time(time_str):
     
     return total_seconds
 
-@tree.command(name="remind", description="Set a reminder (format: 1h30m, 45m, 2h)", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="remind", description="Set a reminder (format: 1h30m, 45m, 2h)")
 async def remind(interaction, time: str, reminder: str):
     try:
         seconds = parse_time(time)
@@ -194,7 +194,7 @@ async def remind(interaction, time: str, reminder: str):
 
 
 ####################################### Meme/GIF Command ########################################################
-@tree.command(name="gif", description="Search for a GIF", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="gif", description="Search for a GIF")
 async def gif(interaction, search_term: str):
     await interaction.response.defer()
     
@@ -228,7 +228,7 @@ async def gif(interaction, search_term: str):
         await interaction.followup.send(f"Error: {str(e)}")
 
 
-@tree.command(name="meme", description="Get a random meme", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="meme", description="Get a random meme")
 async def meme(interaction):
     """Fetch a random meme from popular subreddits via meme-api.com."""
     await interaction.response.defer()
@@ -261,7 +261,7 @@ async def meme(interaction):
 
 ######################################## Google Search Command ###################################################
 # Google Search Command
-@tree.command(name="search", description="Quick Google search", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="search", description="Quick Google search")
 async def search(interaction, query: str):
     await interaction.response.defer()
     
@@ -291,7 +291,7 @@ async def search(interaction, query: str):
         await interaction.followup.send(f"Error performing search: {str(e)}")
 
 ############################################# Weather Command ########################################################
-@tree.command(name="weather", description="Get current weather for a location", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="weather", description="Get current weather for a location")
 async def weather(interaction, location: str):
     await interaction.response.defer()
     
@@ -349,7 +349,7 @@ async def weather(interaction, location: str):
         await interaction.followup.send(f"❌ Error fetching weather: {str(e)}")
 
 ############################################# Joke Command ########################################################
-@tree.command(name="joke", description="Get a random joke", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="joke", description="Get a random joke")
 async def joke(interaction):
     await interaction.response.defer()
     
@@ -397,7 +397,7 @@ async def joke(interaction):
         await interaction.followup.send(f"❌ Error fetching joke: {str(e)}")
 
 ############################################# Translator Command ########################################################
-@tree.command(name="translate", description="Translate text to another language", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="translate", description="Translate text to another language")
 async def translate(interaction, text: str, target_language: str):
     await interaction.response.defer()
     
@@ -436,7 +436,7 @@ async def translate(interaction, text: str, target_language: str):
         await interaction.followup.send(f"❌ Error during translation: {str(e)}")
         
 ############################################# Countdown Timer Command ########################################################
-@tree.command(name="countdown", description="Create a countdown to an event", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="countdown", description="Create a countdown to an event")
 async def countdown(interaction, event_name: str, date: str):
     await interaction.response.defer()
     
@@ -480,7 +480,7 @@ async def countdown(interaction, event_name: str, date: str):
         await interaction.followup.send(f"❌ Error creating countdown: {str(e)}")
 
 ############################################# Word of the Day Command ########################################################
-@tree.command(name="wordofday", description="Get the word of the day", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="wordofday", description="Get the word of the day")
 async def wordofday(interaction):
     await interaction.response.defer()
     
@@ -566,7 +566,7 @@ async def wordofday(interaction):
         await interaction.followup.send(f"❌ Error fetching word of the day: {str(e)}")
 
 ############################################# Reverse Command ########################################################
-@tree.command(name="reverse", description="Reverse someone's text because why not", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="reverse", description="Reverse someone's text because why not")
 async def reverse(interaction, text: str):
     """Reverses the given text and sends it back — surprisingly annoying."""
     reversed_text = text[::-1]
@@ -583,7 +583,7 @@ async def reverse(interaction, text: str):
     await interaction.response.send_message(embed=embed)
 
 ############################################# Mock Command ##########################################################
-@tree.command(name="mock", description="mOcK sOmEoNe'S tExT", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="mock", description="mOcK sOmEoNe'S tExT")
 async def mock(interaction, text: str):
     """Converts text to SpOnGeBoB mOcKiNg CaSe for maximum disrespect."""
     mocked = "".join(
@@ -600,7 +600,7 @@ async def mock(interaction, text: str):
     await interaction.response.send_message(embed=embed)
 
 ############################################# Permamute Commands #####################################################
-@tree.command(name="permamute", description="Permanently server-mute a user until /unpermamute is used", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="permamute", description="Permanently server-mute a user until /unpermamute is used")
 @app_commands.default_permissions(mute_members=True)
 async def permamute(interaction, target: discord.Member):
     """Locks a user into a server mute. If they unmute, the bot instantly re-mutes them."""
@@ -633,7 +633,7 @@ async def permamute(interaction, target: discord.Member):
     await interaction.response.send_message(embed=embed)
 
 
-@tree.command(name="unpermamute", description="Release a user from the permamute", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="unpermamute", description="Release a user from the permamute")
 @app_commands.default_permissions(mute_members=True)
 async def unpermamute(interaction, target: discord.Member):
     """Releases a user from the permamute prison."""
@@ -714,7 +714,7 @@ def _find_ffmpeg():
 FFMPEG_PATH = _find_ffmpeg()
 
 
-@tree.command(name="screechkick", description="Join VC, play an awful screech, then kick a random person", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="screechkick", description="Join VC, play an awful screech, then kick a random person")
 @app_commands.default_permissions(move_members=True)
 async def screechkick(interaction):
     """Joins the caller's voice channel, plays an ear-piercing screech, then
@@ -828,7 +828,7 @@ def play_next_sync(guild_id, error):
         return song_title or title
     return None
 
-@tree.command(name="play", description="Play music from YouTube URL or search term", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="play", description="Play music from YouTube URL or search term")
 async def play(interaction, query: str):
     """Play music from YouTube"""
     await interaction.response.defer()
@@ -901,7 +901,7 @@ async def play(interaction, query: str):
         print(f"Play error: {str(e)}")
         await interaction.followup.send(f"❌ Error playing music: {str(e)}")
 
-@tree.command(name="pause", description="Pause the currently playing music", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="pause", description="Pause the currently playing music")
 async def pause(interaction):
     """Pause music"""
     guild_id = interaction.guild.id
@@ -912,7 +912,7 @@ async def pause(interaction):
     else:
         await interaction.response.send_message("❌ Nothing is currently playing.", ephemeral=True)
 
-@tree.command(name="resume", description="Resume paused music", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="resume", description="Resume paused music")
 async def resume(interaction):
     """Resume music"""
     guild_id = interaction.guild.id
@@ -923,7 +923,7 @@ async def resume(interaction):
     else:
         await interaction.response.send_message("❌ Music is not paused.", ephemeral=True)
 
-@tree.command(name="skip", description="Skip the current song", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="skip", description="Skip the current song")
 async def skip(interaction):
     """Skip current song"""
     guild_id = interaction.guild.id
@@ -934,7 +934,7 @@ async def skip(interaction):
     else:
         await interaction.response.send_message("❌ Nothing is currently playing.", ephemeral=True)
 
-@tree.command(name="queue", description="Show the music queue", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="queue", description="Show the music queue")
 async def queue(interaction):
     """Show music queue"""
     guild_id = interaction.guild.id
@@ -956,7 +956,7 @@ async def queue(interaction):
     embed.description = queue_text or "Queue is empty"
     await interaction.response.send_message(embed=embed)
 
-@tree.command(name="stop", description="Stop music and clear queue", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="stop", description="Stop music and clear queue")
 async def stop(interaction):
     """Stop music and clear queue"""
     guild_id = interaction.guild.id
@@ -969,7 +969,7 @@ async def stop(interaction):
     else:
         await interaction.response.send_message("❌ Nothing is currently playing.", ephemeral=True)
 
-@tree.command(name="leave", description="Make the bot leave the voice channel", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="leave", description="Make the bot leave the voice channel")
 async def leave(interaction):
     """Leave voice channel"""
     guild_id = interaction.guild.id
@@ -984,7 +984,7 @@ async def leave(interaction):
         await interaction.response.send_message("❌ I'm not in a voice channel.", ephemeral=True)
 
 ############################################# Meme Generator Command ########################################################
-@tree.command(name="memegen", description="Generate a meme with custom text", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="memegen", description="Generate a meme with custom text")
 async def memegen(interaction, top_text: str, bottom_text: Optional[str] = None, template: Optional[str] = None):
     """Generate a meme with custom text"""
     await interaction.response.defer()
@@ -1085,7 +1085,7 @@ async def memegen(interaction, top_text: str, bottom_text: Optional[str] = None,
         await interaction.followup.send(f"❌ Error generating meme: {str(e)}")
 
 ############################################# Urban Dictionary Command ########################################################
-@tree.command(name="urban", description="Look up a word on Urban Dictionary", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="urban", description="Look up a word on Urban Dictionary")
 async def urban(interaction, word: str):
     """Look up word on Urban Dictionary"""
     await interaction.response.defer()
@@ -1132,7 +1132,7 @@ async def urban(interaction, word: str):
         await interaction.followup.send(f"❌ Error fetching definition: {str(e)}")
 
 ############################################# Random Fact Command ########################################################
-@tree.command(name="fact", description="Get a random interesting fact", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="fact", description="Get a random interesting fact")
 async def fact(interaction):
     """Get a random fact"""
     await interaction.response.defer()
@@ -1194,7 +1194,7 @@ async def fact(interaction):
         await interaction.followup.send(f"❌ Error fetching fact: {str(e)}")
 
 ############################################# QR Code Generator Command ########################################################
-@tree.command(name="qrcode", description="Generate a QR code from text", guild=discord.Object(id=GUILD_ID))
+@tree.command(name="qrcode", description="Generate a QR code from text")
 async def qrcode_cmd(interaction, text: str):
     """Generate QR code"""
     await interaction.response.defer()
@@ -1252,7 +1252,14 @@ async def on_voice_state_update(member, before, after):
 
 @client.event
 async def on_ready():
-    await tree.sync(guild=discord.Object(id=GUILD_ID))
+    # Clear old guild-specific commands that cause duplicates, then sync global commands
+    guild_obj = discord.Object(id=GUILD_ID)
+    tree.clear_commands(guild=guild_obj)
+    await tree.sync(guild=guild_obj)
+
+    # Sync all commands globally so they appear in every server the bot is in
+    await tree.sync()
+
     print(f"Bot is ready! Logged in as {client.user}")
     print(f"Connected to {len(client.guilds)} guild(s)")
 
