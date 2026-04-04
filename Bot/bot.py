@@ -37,6 +37,10 @@ permamuted_users = {}
 # Store music queues and voice clients for each guild
 music_queues = {}
 voice_clients = {}
+# Auto-disconnect from voice after this many seconds with nothing playing (queue empty, not paused)
+IDLE_DISCONNECT_SECONDS = 300
+# guild_id -> asyncio.Task for pending auto-disconnect
+idle_disconnect_tasks = {}
 
 # YT-DLP options for audio extraction
 ytdl_format_options = {
@@ -776,6 +780,40 @@ async def screechkick(interaction):
             await interaction.guild.voice_client.disconnect()
 
 ############################################# Music Commands ########################################################
+
+def cancel_idle_disconnect(guild_id: int) -> None:
+    """Cancel a pending auto-disconnect for this guild."""
+    task = idle_disconnect_tasks.pop(guild_id, None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
+async def _idle_disconnect_worker(guild_id: int) -> None:
+    """Leave voice after IDLE_DISCONNECT_SECONDS if still idle (not playing, not paused, queue empty)."""
+    try:
+        await asyncio.sleep(IDLE_DISCONNECT_SECONDS)
+        vc = voice_clients.get(guild_id)
+        if vc is None or not vc.is_connected():
+            return
+        if vc.is_playing() or vc.is_paused():
+            return
+        if music_queues.get(guild_id):
+            return
+        await vc.disconnect(force=True)
+        voice_clients.pop(guild_id, None)
+        music_queues.pop(guild_id, None)
+    except asyncio.CancelledError:
+        raise
+    finally:
+        idle_disconnect_tasks.pop(guild_id, None)
+
+
+def schedule_idle_disconnect(guild_id: int) -> None:
+    """Start (or restart) the auto-disconnect timer for this guild."""
+    cancel_idle_disconnect(guild_id)
+    idle_disconnect_tasks[guild_id] = client.loop.create_task(_idle_disconnect_worker(guild_id))
+
+
 def get_audio_source(url):
     """
     Extract audio from URL using yt-dlp
@@ -809,23 +847,28 @@ def play_next_sync(guild_id, error):
     """
     if error:
         print(f"Music playback error: {error}")
-    
-    # Check if queue exists and has songs
-    if guild_id not in music_queues or not music_queues[guild_id]:
-        return
-    
-    # Check if bot is still connected to voice channel
+
+    # Bot left or disconnected — nothing to do
     if guild_id not in voice_clients or not voice_clients[guild_id].is_connected():
         return
-    
-    # Get next song from queue
+
+    # No more songs — schedule idle disconnect (not playing, queue empty)
+    if guild_id not in music_queues or not music_queues[guild_id]:
+        schedule_idle_disconnect(guild_id)
+        return
+
+    cancel_idle_disconnect(guild_id)
     url, title = music_queues[guild_id].pop(0)
     source, song_title = get_audio_source(url)
-    
-    # Play the next song
+
     if source:
         voice_clients[guild_id].play(source, after=lambda e: play_next_sync(guild_id, e))
         return song_title or title
+    # Failed to load next track — try another or go idle
+    if music_queues[guild_id]:
+        play_next_sync(guild_id, None)
+    else:
+        schedule_idle_disconnect(guild_id)
     return None
 
 @tree.command(name="play", description="Play music from YouTube URL or search term")
@@ -866,16 +909,24 @@ async def play(interaction, query: str):
         url = data.get('url') or data.get('webpage_url')
         title = data.get('title', 'Unknown')
         duration = data.get('duration', 0)
-        
-        # Add to queue
-        music_queues[guild_id].append((url, title))
-        
-        # If nothing is playing, start playing
-        if not voice_clients[guild_id].is_playing():
+
+        vc = voice_clients[guild_id]
+        # If something is already playing (or paused), queue this track only — do not duplicate the now-playing
+        # entry in the queue, or it will replay when the current song ends.
+        if vc.is_playing() or vc.is_paused():
+            music_queues[guild_id].append((url, title))
+            embed = Embed(
+                title="✅ Added to Queue",
+                description=f"**{title}**",
+                color=0x1db954
+            )
+            embed.add_field(name="Position", value=f"#{len(music_queues[guild_id])}", inline=True)
+            await interaction.followup.send(embed=embed)
+        else:
+            cancel_idle_disconnect(guild_id)
             source, _ = get_audio_source(url)
             if source:
-                voice_clients[guild_id].play(source, after=lambda e: play_next_sync(guild_id, e))
-                
+                vc.play(source, after=lambda e: play_next_sync(guild_id, e))
                 embed = Embed(
                     title="🎵 Now Playing",
                     description=f"**{title}**",
@@ -888,14 +939,6 @@ async def play(interaction, query: str):
                 await interaction.followup.send(embed=embed)
             else:
                 await interaction.followup.send("❌ Failed to load audio source.")
-        else:
-            embed = Embed(
-                title="✅ Added to Queue",
-                description=f"**{title}**",
-                color=0x1db954
-            )
-            embed.add_field(name="Position", value=f"#{len(music_queues[guild_id])}", inline=True)
-            await interaction.followup.send(embed=embed)
             
     except Exception as e:
         print(f"Play error: {str(e)}")
@@ -918,6 +961,7 @@ async def resume(interaction):
     guild_id = interaction.guild.id
     
     if guild_id in voice_clients and voice_clients[guild_id].is_paused():
+        cancel_idle_disconnect(guild_id)
         voice_clients[guild_id].resume()
         await interaction.response.send_message("▶️ Music resumed.")
     else:
@@ -962,9 +1006,11 @@ async def stop(interaction):
     guild_id = interaction.guild.id
     
     if guild_id in voice_clients and voice_clients[guild_id].is_connected():
-        voice_clients[guild_id].stop()
+        # Clear queue before stop() so the playback `after` callback cannot start the next track
         if guild_id in music_queues:
             music_queues[guild_id].clear()
+        voice_clients[guild_id].stop()
+        schedule_idle_disconnect(guild_id)
         await interaction.response.send_message("🛑 Music stopped and queue cleared.")
     else:
         await interaction.response.send_message("❌ Nothing is currently playing.", ephemeral=True)
@@ -975,6 +1021,7 @@ async def leave(interaction):
     guild_id = interaction.guild.id
     
     if guild_id in voice_clients and voice_clients[guild_id].is_connected():
+        cancel_idle_disconnect(guild_id)
         await voice_clients[guild_id].disconnect()
         if guild_id in music_queues:
             music_queues[guild_id].clear()
